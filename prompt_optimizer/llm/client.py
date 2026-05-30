@@ -11,6 +11,8 @@ Usage:
 
     # Explicit Gemini usage
     client = LLMClient(provider="gemini", model="gemini-1.5-flash")
+
+Note: Uses the new `google-genai` SDK (not the deprecated `google-generativeai`).
 """
 
 from __future__ import annotations
@@ -151,9 +153,9 @@ class LLMClient:
 
     def _build_gemini_client(self):
         try:
-            import google.generativeai as genai  # noqa: PLC0415
+            from google import genai  # noqa: PLC0415
         except ImportError:
-            raise ImportError("Run: uv add google-generativeai") from None
+            raise ImportError("Run: uv add google-genai") from None
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -161,14 +163,8 @@ class LLMClient:
                 "GEMINI_API_KEY not set. "
                 "Get one at https://aistudio.google.com/app/apikey"
             )
-        genai.configure(api_key=api_key)
-        return genai.GenerativeModel(
-            model_name=self.model,
-            generation_config=genai.GenerationConfig(
-                temperature=self.temperature,
-                max_output_tokens=self.max_tokens,
-            ),
-        )
+        # Return a configured client — the model name is used at call time
+        return genai.Client(api_key=api_key)
 
     def _build_openai_client(self):
         try:
@@ -190,24 +186,28 @@ class LLMClient:
 
     @retry(
         retry=retry_if_exception_type(Exception),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
         stop=stop_after_attempt(3),
         reraise=True,
     )
     def _complete_gemini(self, prompt: str) -> CompletionResult:
         try:
-            response = self._client.generate_content(prompt)
+            from google.genai import types  # noqa: PLC0415
 
-            # Gemini response structure
-            text = response.text if hasattr(response, "text") else ""
+            response = self._client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=self.temperature,
+                    max_output_tokens=self.max_tokens,
+                ),
+            )
 
-            # Token usage (available in usage_metadata)
-            usage = getattr(response, "usage_metadata", None)
+            text = response.text or ""
+            usage = response.usage_metadata
             prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
             completion_tokens = getattr(usage, "candidates_token_count", 0) or 0
-            total_tokens = getattr(usage, "total_token_count", 0) or (
-                prompt_tokens + completion_tokens
-            )
+            total_tokens = getattr(usage, "total_token_count", 0) or (prompt_tokens + completion_tokens)
 
             return CompletionResult(
                 text=text,
@@ -219,16 +219,23 @@ class LLMClient:
                 latency_ms=0.0,
             )
         except Exception as e:
-            logger.warning("Gemini call failed (%s) — retrying...", type(e).__name__)
+            err_str = str(e).lower()
+            if "resource_exhausted" in err_str or "429" in str(e) or "quota" in err_str:
+                logger.warning("Gemini rate limit hit — backing off (this is normal on free tier)...")
+            else:
+                logger.warning("Gemini call failed (%s) — retrying...", type(e).__name__)
             raise
 
     def _count_tokens_gemini(self, text: str) -> int:
         """Use Gemini's native count_tokens endpoint (exact, not estimated)."""
         try:
-            result = self._client.count_tokens(text)
-            return result.total_tokens
+            from google.genai import types  # noqa: PLC0415
+            response = self._client.models.count_tokens(
+                model=self.model,
+                contents=text,
+            )
+            return response.total_tokens
         except Exception:
-            # Fallback: word-level estimate
             return max(1, len(text.split()))
 
     # ------------------------------------------------------------------

@@ -176,18 +176,22 @@ def run_inspection(
             )
             return
 
-        console.print("\n[bold]Running Gemini quality evaluation (this takes ~30s)...[/bold]")
-        console.print("[dim]Sending original + compressed prompts to Gemini, computing BERTScore...[/dim]")
+        console.print("\n[bold]Running Gemini quality evaluation (this takes ~60s)...[/bold]")
+        console.print(
+            "[dim]Tip: Free tier = 5 req/min. We pause 15s between calls to avoid hitting it.[/dim]"
+        )
 
+        # Create engine ONCE — BERTScore model (1.4GB) loads only on first call then cached
         from prompt_optimizer.evaluation.eval_engine import EvalEngine
         engine = EvalEngine()
 
         results = []
-        for prompt_obj, compressed in zip(samples[:4], compressed_texts[:4]):  # limit to 4 to save quota
+        eval_samples = samples[:4]  # limit to 4 to save quota
+        for idx, (prompt_obj, compressed) in enumerate(zip(eval_samples, compressed_texts[:4])):
             if not compressed.strip():
                 continue
             try:
-                with console.status(f"Evaluating {prompt_obj.id}..."):
+                with console.status(f"Evaluating {prompt_obj.id} ({idx+1}/{len(eval_samples)})..."):
                     result = engine.evaluate(
                         original_prompt=prompt_obj.prompt,
                         compressed_prompt=compressed,
@@ -195,39 +199,68 @@ def run_inspection(
                     )
                 results.append((prompt_obj.id, result))
                 console.print(
-                    f"  {prompt_obj.id}: "
-                    f"BERTScore F1=[green]{result.scores.bertscore_f1:.4f}[/green] | "
+                    f"  [green]✓[/green] {prompt_obj.id}: "
+                    f"BERTScore F1=[bold green]{result.scores.bertscore_f1:.4f}[/bold green] | "
                     f"Compression=[cyan]{result.scores.compression_ratio:.1%}[/cyan]"
                 )
+                # Free tier rate limit: 5 requests/min → wait 15s between calls
+                if idx < len(eval_samples) - 1:
+                    import time as _time  # noqa: PLC0415
+                    console.print(f"  [dim]Waiting 15s (free tier rate limit)...[/dim]")
+                    _time.sleep(15)
             except Exception as e:
-                console.print(f"  [red]Error on {prompt_obj.id}: {e}[/red]")
+                err = str(e)
+                if "quota" in err.lower() or "429" in err:
+                    console.print(
+                        f"  [red]Rate limit hit on {prompt_obj.id}[/red] — "
+                        "wait 60s then re-run, or upgrade to paid tier."
+                    )
+                else:
+                    console.print(f"  [red]Error on {prompt_obj.id}: {e}[/red]")
 
         if results:
             avg_bs = sum(r.scores.bertscore_f1 for _, r in results) / len(results)
             avg_comp = sum(r.scores.compression_ratio for _, r in results) / len(results)
-            console.print(f"\n[bold]True Eval Results:[/bold]")
-            console.print(f"  Average BERTScore F1:    [green]{avg_bs:.4f}[/green]")
-            console.print(f"  Average Compression:     [cyan]{avg_comp:.1%}[/cyan]")
+
+            # Interpret the score
+            if avg_bs >= 0.90:
+                quality_label = "[bold green]EXCELLENT[/bold green]"
+            elif avg_bs >= 0.85:
+                quality_label = "[bold yellow]GOOD[/bold yellow]"
+            else:
+                quality_label = "[bold red]NEEDS IMPROVEMENT[/bold red]"
+
+            console.print(f"\n[bold]True Eval Summary ({len(results)} samples):[/bold]")
+            console.print(f"  BERTScore F1:    [bold green]{avg_bs:.4f}[/bold green] — {quality_label}")
+            console.print(f"  Compression:     [cyan]{avg_comp:.1%}[/cyan] tokens removed")
             console.print(
-                f"\n  [dim]Interpretation: BERTScore >0.85 = good quality preservation, "
-                f">0.90 = excellent[/dim]"
+                f"\n  [dim]Thresholds: >0.90 = Excellent | >0.85 = Good | <0.85 = Needs work[/dim]"
             )
 
             # Save results
             Path("results").mkdir(exist_ok=True)
-            save_data = [
-                {
-                    "id": pid,
-                    "bertscore_f1": r.scores.bertscore_f1,
-                    "compression_ratio": r.scores.compression_ratio,
-                    "original_tokens": r.scores.original_tokens,
-                    "compressed_tokens": r.scores.compressed_tokens,
-                }
-                for pid, r in results
-            ]
+            save_data = {
+                "summary": {
+                    "avg_bertscore_f1": round(avg_bs, 4),
+                    "avg_compression": round(avg_comp, 4),
+                    "n_samples": len(results),
+                    "quality_label": "excellent" if avg_bs >= 0.90 else "good" if avg_bs >= 0.85 else "needs_improvement",
+                },
+                "samples": [
+                    {
+                        "id": pid,
+                        "bertscore_f1": round(r.scores.bertscore_f1, 4),
+                        "compression_ratio": round(r.scores.compression_ratio, 4),
+                        "original_tokens": r.scores.original_tokens,
+                        "compressed_tokens": r.scores.compressed_tokens,
+                    }
+                    for pid, r in results
+                ],
+            }
             with open("results/gemini_eval.json", "w") as f:
                 json.dump(save_data, f, indent=2)
-            console.print("  Saved to [dim]results/gemini_eval.json[/dim]")
+            console.print("  [dim]Saved to results/gemini_eval.json[/dim]")
+
 
 
 def main():
