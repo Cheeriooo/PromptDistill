@@ -1,0 +1,182 @@
+# =============================================================================
+# Prompt Optimizer — .gitignore
+# =============================================================================
+# Strategy: commit only source code, pyproject.toml, uv.lock, README, and
+# the curated prompt dataset. Everything generated, secret, or environment-
+# specific is excluded.
+# =============================================================================
+
+
+# ---------------------------------------------------------------------------
+# Python bytecode & compiled files
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyc
+*.pyd
+
+# ---------------------------------------------------------------------------
+# Virtual environments (uv creates .venv by default)
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.env.bak
+
+# ---------------------------------------------------------------------------
+# uv & Python version pins (machine-specific)
+# ---------------------------------------------------------------------------
+.python-version
+
+# ---------------------------------------------------------------------------
+# Environment variables — NEVER commit real secrets
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example        # Always commit the example template
+
+# ---------------------------------------------------------------------------
+# Documentation folder (internal notes, not for the repo)
+# ---------------------------------------------------------------------------
+docs/
+
+# ---------------------------------------------------------------------------
+# LLM response cache (can be regenerated; may contain private prompts)
+# ---------------------------------------------------------------------------
+.cache/
+*.cache
+cache/
+
+# ---------------------------------------------------------------------------
+# Generated data — cached LLM responses (large + potentially private)
+# ---------------------------------------------------------------------------
+data/cached_responses.jsonl
+data/cached_responses/
+# Keep the curated prompt dataset — it's source-of-truth, small & safe
+# data/prompts.jsonl  ← intentionally NOT ignored
+
+# ---------------------------------------------------------------------------
+# Experiment results & outputs (auto-generated, reproducible)
+# ---------------------------------------------------------------------------
+results/
+outputs/
+
+# ---------------------------------------------------------------------------
+# Model checkpoints & weights (too large for git, use git-lfs if needed)
+# ---------------------------------------------------------------------------
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.onnx
+
+# ---------------------------------------------------------------------------
+# Notebooks — output cells & checkpoints (keep .ipynb files themselves)
+# ---------------------------------------------------------------------------
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+notebooks/outputs/
+
+# ---------------------------------------------------------------------------
+# IDE & editor
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.project
+.classpath
+
+# ---------------------------------------------------------------------------
+# OS-specific
+# ---------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+*.log
+logs/
+log/
+
+# ---------------------------------------------------------------------------
+# Distribution / packaging (not a published package yet)
+# ---------------------------------------------------------------------------
+dist/
+build/
+*.egg-info/
+*.egg
+MANIFEST
+.eggs/
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ---------------------------------------------------------------------------
+# Typing
+# ---------------------------------------------------------------------------
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# ---------------------------------------------------------------------------
+# W&B / MLflow experiment tracking (runs can be large)
+# ---------------------------------------------------------------------------
+wandb/
+mlruns/
+mlflow/
+
+# ---------------------------------------------------------------------------
+# HuggingFace model cache (downloaded models, not source)
+# ---------------------------------------------------------------------------
+# Usually lives in ~/.cache/huggingface, but just in case:
+*.safetensors
+hub/
+
+# ---------------------------------------------------------------------------
+# Antigravity CLI (tool-internal files)
+# ---------------------------------------------------------------------------
+.antigravitycli/
+
+# ---------------------------------------------------------------------------
+# uv-generated default placeholder (not part of the project)
+# ---------------------------------------------------------------------------
+main.py
