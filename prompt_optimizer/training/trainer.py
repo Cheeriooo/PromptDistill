@@ -130,6 +130,12 @@ class Trainer:
         except ImportError:
             _use_rich = False
 
+        # Dynamically scale Gumbel temperature annealing steps to match total steps
+        steps_per_epoch = (len(train_ds) + self.cfg.batch_size - 1) // self.cfg.batch_size
+        total_steps = steps_per_epoch * self.cfg.num_epochs
+        self.cfg.gumbel_tau_anneal_steps = total_steps
+        logger.info("Automatically scaled gumbel_tau_anneal_steps to %d based on epoch & dataset size", total_steps)
+
         self.model.train()
 
         for epoch in range(1, self.cfg.num_epochs + 1):
@@ -194,7 +200,7 @@ class Trainer:
         task_types = [p.task for p in batch]
 
         # Forward
-        output = self.model(prompts=prompts, task_types=task_types, hard=False)
+        output = self.model(prompts=prompts, task_types=task_types, hard=True)
 
         # Loss
         loss, metrics = proxy_loss(
