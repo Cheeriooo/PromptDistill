@@ -1,4 +1,4 @@
-# Prompt Optimizer
+# PromptDistill
 
 This repository implements learnable prompt compression using Gumbel-Softmax discrete optimization. It compresses system instructions and user prompts into shorter representations to reduce API costs and context window usage; the system preserves core semantic meaning.
 
