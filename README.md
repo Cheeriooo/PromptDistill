@@ -1,44 +1,77 @@
 # Prompt Optimizer
 
-A research-grade, learnable prompt compression system using Gumbel-Softmax discrete optimization.
+A research-grade, learnable prompt compression system using Gumbel-Softmax discrete optimization. This tool compresses long system instructions or user prompts into shorter representations while retaining their original semantic meaning, saving API costs and context window usage.
 
-## Docs
-- [Roadmap](docs/ROADMAP.md)
-- [Progress Tracker](docs/PROGRESS.md)
-- [Research Decisions](docs/DECISIONS.md)
+## 🛠️ What We Are Using & For What Tasks
 
-## Quick Start
+The system relies on a combination of deep learning and natural language heuristics to ensure high compression ratios without losing key details:
 
+### 1. Core Model & Deep Learning
+*   **PyTorch & Gumbel-Softmax Selection**: Performs end-to-end differentiable token selection. It decides which tokens to keep or drop based on the target token reduction rate ($\lambda$).
+*   **HuggingFace Transformers (DistilBERT)**: Powering the token scoring module (`prompt_optimizer/model/token_scorer.py`). It computes contextual representations of the input prompt to evaluate token importance.
+
+### 2. Semantic Preservation Heuristics (Quality Fixes)
+To prevent semantic degradation (such as dropping critical verbs, negation inversion, or losing proper nouns), we integrate:
+*   **spaCy (`en_core_web_sm`)**: Used for **Named Entity Recognition (NER)**. Important entities (e.g., proper nouns, places, historical events like `"First World War"`) are detected and receives a logit boost (+8.0) to ensure they are not dropped.
+*   **NLTK (Natural Language Toolkit)**: Used for **Part-of-Speech (POS) tagging**. Key content words (nouns, verbs, adjectives, numbers, and question words like `"why"`, `"how"`) are boosted (+5.0 logit), while common auxiliary/copula verbs (e.g., `"is"`, `"was"`, `"does"`) are filtered out to be compressed.
+*   **Negation Safeguards**: A critical word dictionary ensures essential negations (e.g., `"not"`, `"no"`, `"never"`, `"without"`, `"don't"`) are always retained, preventing severe meaning inversion (e.g. *"does not use recursion"* $\rightarrow$ *"use recursion"* is avoided).
+*   **Contraction & Hyphen Reassembly**: Handles token-level reconstruction to merge separated tokens (e.g. `don ' t` $\rightarrow$ `don't` and `built - in` $\rightarrow$ `built-in`) for clean final outputs.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Install Dependencies
+Ensure you have `uv` installed, then synchronize the environment:
 ```bash
-# 1. Install dependencies
 uv sync
+```
 
-# 2. Copy and set up environment variables
+### 2. Configure Environment
+Copy the example environment file and add your `GEMINI_API_KEY`:
+```bash
 cp .env.example .env
-# Fill in your GEMINI_API_KEY in .env
-
-# 3. Try the interactive Prompt Compression CLI Tool!
-uv run python scripts/compress.py
 ```
 
-## Interactive CLI Demo (`scripts/compress.py`)
+---
 
-Run the tool without arguments to use interactive mode:
+## 🖥️ Interactive CLI Demo (`scripts/compress.py`)
+
+Run the tool in interactive mode to test prompts manually:
 ```bash
 uv run python scripts/compress.py
 ```
-Or run with parameters for direct execution:
-```bash
-uv run python scripts/compress.py --prompt "Your long instruction here..." --task qa --lambda 0.05
-```
-This utility:
-1. Compresses the input prompt using task-conditioned Gumbel checkpoints.
-2. Displays the side-by-side comparison of original vs. compressed prompt.
-3. Provides token reduction percentages.
-4. Estimates input token financial cost savings (per 1 Million runs) for Gemini 1.5 Flash, GPT-4o, and Claude 3.5 Sonnet.
-5. If `GEMINI_API_KEY` is provided, optionally queries Gemini 1.5 Flash with both prompts and displays responses side-by-side.
 
-## Key Scientific Results
+Or pass direct parameters:
+```bash
+uv run python scripts/compress.py --prompt "Can you please provide me code for binary search" --task code --lambda 0.1
+```
+
+This utility will:
+1. Compress the prompt using the Gumbel selector.
+2. Estimate cost savings across Gemini, GPT, and Claude.
+3. Compare responses side-by-side using the live LLM API.
+
+---
+
+## 🧪 Testing Suites
+
+### 1. Quality Regression Test (`test_quality.py`)
+Verifies the optimizer against 55+ hand-crafted regression and adversarial cases (proper nouns, negative constraints, contraction edge cases):
+```bash
+uv run python test_quality.py
+```
+
+### 2. Batch Compression Test (`test_batch.py`)
+Runs 102 diverse real-world prompts through the compressor and writes the results to a CSV for manual quality auditing:
+```bash
+uv run python test_batch.py --lambda 0.1
+```
+The results are exported to: `results/batch_test_lambda_0_1.csv`
+
+---
+
+## 📊 Key Scientific Results
 
 Our differentiable token selector achieves excellent compression ratios while maintaining high semantic quality:
 
@@ -53,20 +86,16 @@ Our differentiable token selector achieves excellent compression ratios while ma
 The **Pareto Frontier** comparison chart mapping quality vs. compression can be viewed at:
 [results/pareto_frontier.png](file:///E:/Rakesh/work/Prompt-optimizer/results/pareto_frontier.png)
 
-### Ablation Study Summary
-Our ablation studies comparing Gumbel-Softmax selection to other heuristic approaches under equal token budgets show:
-- **Ours (Gumbel-Softmax Selector)**: **0.8648 F1** (Best - differentiable constraint optimization works).
-- **Greedy Top-K selection**: **0.8648 F1** (Sub-optimal - lacks Gumbel gradient flow feedback).
-- **Random Token Selection**: **0.7578 F1** (Lower bound - destroys prompt semantics).
+---
 
-## Project Structure
+## 📂 Project Structure
 
 ```
 prompt-optimizer/
 ├── docs/               # Roadmap, progress tracker, decisions log
 ├── data/               # Prompt datasets (JSONL)
 ├── results/            # Auto-generated experiment results & Pareto plot
-├── checkpoints/        # Saved model weights (sweep models & default models)
+├── checkpoints/        # Saved model weights
 ├── prompt_optimizer/   # Main source package
 │   ├── llm/            # LLM client + caching
 │   ├── evaluation/     # Metrics + eval engine
@@ -74,8 +103,9 @@ prompt-optimizer/
 │   ├── baselines/      # Baseline compression methods
 │   ├── model/          # Gumbel-Softmax optimizer
 │   └── training/       # Training loops
-├── scripts/            # Experiment and CLI scripts (compress, train, pareto, ablation)
-├── notebooks/          # Visualization notebooks
-├── smoke_test.py       # Phase 0 validation
-└── pyproject.toml      # uv project config
+├── scripts/            # Experiment and CLI scripts
+├── test_quality.py     # Regression test suite
+├── test_batch.py       # Batch CSV test exporter
+├── pyproject.toml      # uv project config
+└── README.md           # This documentation
 ```
