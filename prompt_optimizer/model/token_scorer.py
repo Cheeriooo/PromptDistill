@@ -27,6 +27,7 @@ import os
 import torch
 import torch.nn as nn
 from transformers import AutoModel, AutoTokenizer
+from transformers import logging as hf_logging
 
 from prompt_optimizer.training.config import TrainingConfig
 
@@ -52,9 +53,22 @@ class TokenScorer(nn.Module):
         # ----------------------------------------------------------------
         # Frozen backbone — produces contextual token embeddings
         # ----------------------------------------------------------------
+        # Load silently: distilbert-base-uncased ships with MLM-head weights
+        # (vocab_projector / vocab_transform / vocab_layer_norm) that are not
+        # part of the base DistilBertModel we use here.  The resulting
+        # "UNEXPECTED keys" LOAD REPORT is harmless but clutters the CLI.
+        # We suppress it by temporarily pushing HF logging to ERROR level and
+        # disabling the tqdm progress bar, then restoring both after the load.
         logger.info("Loading encoder: %s", cfg.scorer_base_model)
-        self.encoder = AutoModel.from_pretrained(cfg.scorer_base_model)
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg.scorer_base_model)
+        _prev_verbosity = hf_logging.get_verbosity()
+        hf_logging.set_verbosity_error()
+        hf_logging.disable_progress_bar()
+        try:
+            self.encoder = AutoModel.from_pretrained(cfg.scorer_base_model)
+            self.tokenizer = AutoTokenizer.from_pretrained(cfg.scorer_base_model)
+        finally:
+            hf_logging.set_verbosity(_prev_verbosity)
+            hf_logging.enable_progress_bar()
         self.encoder_dim = self.encoder.config.hidden_size  # 768 for distilbert
 
         # Freeze all encoder parameters

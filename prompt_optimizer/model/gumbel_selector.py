@@ -198,6 +198,20 @@ def apply_mask_to_tokens(
 
         kept_ids = [tid for tid, keep in zip(ids, aligned) if keep]
         text = tokenizer.decode(kept_ids, skip_special_tokens=True)
+
+        # --- Post-processing: clean up tokenisation artifacts ---
+        # DistilBERT splits contractions (don't → don / ' / t) and decodes
+        # them with spaces (don ' t).  Re-join common contraction patterns.
+        import re  # noqa: PLC0415
+        # Collapse "n ' t" → "n't", "' s" → "'s", "' re" → "'re", etc.
+        text = re.sub(r"\s*'\s*", "'", text)
+        # Collapse " - " between words into "-" (e.g. "built - in" → "built-in")
+        text = re.sub(r"\s*-\s*", "-", text)
+        # Remove stray spaces before punctuation
+        text = re.sub(r"\s+([?.!,;:])", r"\1", text)
+        # Collapse multiple spaces
+        text = re.sub(r"\s{2,}", " ", text)
+
         compressed_texts.append(text.strip())
 
     return compressed_texts
