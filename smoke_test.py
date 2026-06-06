@@ -116,8 +116,8 @@ def run_smoke_test(use_mock: bool = False) -> bool:
             "parameters in the direction of the negative gradient."
         )
     else:
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
-        if not api_key or api_key.startswith("sk-..."):
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key or api_key.startswith("sk-...") or "your-key" in api_key:
             console.print(
                 "  ⚠️  [yellow]No API key found in .env — switching to mock mode.[/yellow]\n"
                 "  Copy .env.example → .env and fill in your API key to test real calls."

@@ -30,6 +30,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Monkeypatch RobertaTokenizer for compatibility with transformers v5+ and bert-score
+import transformers
+if not hasattr(transformers.RobertaTokenizer, "build_inputs_with_special_tokens"):
+    def build_inputs_with_special_tokens(self, token_ids_0, token_ids_1=None):
+        if token_ids_1 is None:
+            return [self.cls_token_id] + token_ids_0 + [self.sep_token_id]
+        cls = [self.cls_token_id]
+        sep = [self.sep_token_id]
+        return cls + token_ids_0 + sep + sep + token_ids_1 + sep
+    transformers.RobertaTokenizer.build_inputs_with_special_tokens = build_inputs_with_special_tokens
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -132,6 +132,7 @@ def run_ablation(checkpoint_path: str, eval_size: int) -> None:
 
     # 4. Evaluate each method via Gemini
     engine = EvalEngine()
+    ablation_results = []
     
     try:
         for idx, prompt_obj in enumerate(eval_prompts):

@@ -202,13 +202,31 @@ class Trainer:
         # Forward
         output = self.model(prompts=prompts, task_types=task_types, hard=True)
 
+        # Decode compressed texts for fluency signal (cheap — no LLM call)
+        # We detach and decode to get actual strings the model would output
+        try:
+            from prompt_optimizer.model.gumbel_selector import apply_mask_to_tokens  # noqa: PLC0415
+            with torch.no_grad():
+                encoded = self.model.token_scorer.tokenize(prompts, device=self.device)
+                hard_mask = (output.soft_mask >= 0.5).float()
+                decoded = apply_mask_to_tokens(
+                    input_ids=encoded["input_ids"],
+                    mask=hard_mask,
+                    tokenizer=self.model.token_scorer.tokenizer,
+                )
+        except Exception:
+            decoded = None
+
         # Loss
         loss, metrics = proxy_loss(
             output,
             lambda_=self.cfg.lambda_,
             min_keep_ratio=0.20,       # never drop below 20% of tokens
-            target_keep_ratio=0.50,    # aim to keep ~50% of tokens
+            target_keep_ratio=0.45,    # aim for ~45% token keep (good compression + readable)
             emptiness_penalty_weight=5.0,
+            fluency_weight=0.15,       # light fluency signal — guides grammar without overriding compression
+            decoded_texts=decoded,
+            original_texts=prompts,
         )
 
         # Backward

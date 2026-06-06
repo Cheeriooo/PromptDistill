@@ -197,14 +197,20 @@ class PromptOptimizerModel(nn.Module):
         prompts: list[str],
         task_types: list[str],
         threshold: float = 0.5,
+        min_keep_ratio: float = 0.55,
+        max_keep_ratio: float = 0.85,
     ) -> list[str]:
         """
         Compress prompts at inference time. Returns decoded strings.
 
         Args:
-            prompts:    List of raw prompt strings.
-            task_types: List of task type strings.
-            threshold:  Binary mask threshold (default 0.5).
+            prompts:        List of raw prompt strings.
+            task_types:     List of task type strings.
+            threshold:      Sigmoid threshold for the hard mask (default 0.5).
+            min_keep_ratio: Minimum fraction of real tokens to always keep.
+                            Prevents keyword-soup over-compression. Default 0.40
+                            means at least 40% of tokens are always preserved.
+            max_keep_ratio: Maximum fraction to keep (caps very mild compression).
 
         Returns:
             List of compressed prompt strings.
@@ -225,19 +231,34 @@ class PromptOptimizerModel(nn.Module):
 
         logits = self.token_scorer(input_ids, attention_mask, task_indices)
 
-        # Hard mask at inference (no Gumbel noise, just threshold)
+        # Hard mask at inference (no Gumbel noise, just threshold the sigmoid)
         hard_mask = (torch.sigmoid(logits / self.gumbel_selector.tau_end) >= threshold).float()
 
-        # --- Minimum token guarantee ---
-        # If the mask is all zeros (model collapsed), fall back to top-30% by logit
+        # --- Quality guard: enforce min/max keep ratios per sequence ---
         for i in range(hard_mask.shape[0]):
-            real_tokens = attention_mask[i].sum().item()
-            kept = hard_mask[i].sum().item()
-            if kept == 0 or kept / real_tokens < 0.15:  # below 15% → fallback
-                min_keep = max(3, int(real_tokens * 0.30))
-                top_indices = logits[i].topk(min_keep).indices
+            real_indices = (attention_mask[i] == 1).nonzero(as_tuple=True)[0]
+            real_tokens = len(real_indices)
+            if real_tokens == 0:
+                continue
+
+            kept = int(hard_mask[i][real_indices].sum().item())
+            min_keep = max(3, int(real_tokens * min_keep_ratio))
+            max_keep = int(real_tokens * max_keep_ratio)
+
+            if kept < min_keep:
+                # Model dropped too much → promote top-scored tokens until floor is met
+                # Get logits only for real (non-padding) positions
+                real_logits = logits[i][real_indices]
+                # Sort by score descending, take top min_keep
+                top_real_indices = real_logits.topk(min(min_keep, real_tokens)).indices
                 hard_mask[i] = torch.zeros_like(hard_mask[i])
-                hard_mask[i][top_indices] = 1.0
+                hard_mask[i][real_indices[top_real_indices]] = 1.0
+            elif kept > max_keep:
+                # Model kept too much → demote lowest-scored surplus tokens
+                real_logits = logits[i][real_indices]
+                top_real_indices = real_logits.topk(max_keep).indices
+                hard_mask[i] = torch.zeros_like(hard_mask[i])
+                hard_mask[i][real_indices[top_real_indices]] = 1.0
 
         compressed = apply_mask_to_tokens(
             input_ids=input_ids,
